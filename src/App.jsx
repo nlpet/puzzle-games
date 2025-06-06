@@ -6,7 +6,7 @@ import NumberFlow from "./games/NumberFlow";
 
 function App() {
   return (
-    <Router basename="/puzzle-games">
+    <Router basename="/">
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route
