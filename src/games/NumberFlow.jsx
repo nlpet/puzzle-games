@@ -523,8 +523,9 @@ function NumberFlow() {
           <h1 className="text-6xl mb-4 font-light tracking-tight">
             NumberFlow_
           </h1>
-          <p className="text-gray-400 text-xl font-light">
-            Merge matching numbers to reach 2048
+          <p className="text-gray-400 text-lg font-light">
+            Merge matching numbers to reach 2048 in the middle grid cell denoted
+            with X.
           </p>
         </div>
         {/* Game Won/Over Messages */}
@@ -763,7 +764,7 @@ function NumberFlow() {
           <div className="text-center mt-8">
             <p className="text-gray-500 text-sm">
               Move blocks with W/S/D (left) and ↑/←/↓ (right) • Match same
-              numbers • Create a single 2048 to win
+              numbers • Create a 2048 block in the centre to win
             </p>
           </div>
         </div>
