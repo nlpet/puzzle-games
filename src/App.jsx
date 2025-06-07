@@ -5,6 +5,7 @@ import LandingPage from "./components/LandingPage";
 import GameFrame from "./components/GameFrame";
 import NumberFlow from "./games/NumberFlow";
 import Synapse from "./games/Synapse";
+import MacrodataRefinement from "./games/MacrodataRefinement";
 
 function App() {
   return (
@@ -26,6 +27,14 @@ function App() {
           element={
             <GameFrame>
               <Synapse />
+            </GameFrame>
+          }
+        />
+        <Route
+          path="/game/macrodata-refinement"
+          element={
+            <GameFrame>
+              <MacrodataRefinement />
             </GameFrame>
           }
         />

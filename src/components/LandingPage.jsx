@@ -160,6 +160,144 @@ const games = [
     available: true,
   },
   {
+    id: "macrodata-refinement",
+    name: "Macrodata Refinement",
+    description:
+      "Find patterns in the numbers. Your outie would be proud. Inspired by Severance.",
+    icon: (
+      <svg viewBox="0 0 100 100" className="w-full h-full">
+        {/* Grid background */}
+        <rect
+          x="15"
+          y="15"
+          width="70"
+          height="70"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1"
+          opacity="0.2"
+        />
+
+        {/* Grid lines */}
+        <line
+          x1="15"
+          y1="35"
+          x2="85"
+          y2="35"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          opacity="0.2"
+        />
+        <line
+          x1="15"
+          y1="55"
+          x2="85"
+          y2="55"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          opacity="0.2"
+        />
+        <line
+          x1="35"
+          y1="15"
+          x2="35"
+          y2="85"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          opacity="0.2"
+        />
+        <line
+          x1="55"
+          y1="15"
+          x2="55"
+          y2="85"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          opacity="0.2"
+        />
+
+        {/* Pattern highlight */}
+        <rect
+          x="15"
+          y="35"
+          width="20"
+          height="20"
+          fill="currentColor"
+          opacity="0.3"
+        />
+        <rect
+          x="35"
+          y="35"
+          width="20"
+          height="20"
+          fill="currentColor"
+          opacity="0.4"
+        />
+        <rect
+          x="55"
+          y="35"
+          width="20"
+          height="20"
+          fill="currentColor"
+          opacity="0.5"
+        />
+
+        {/* Numbers */}
+        <text
+          x="25"
+          y="48"
+          textAnchor="middle"
+          className="fill-current text-xs font-light"
+          opacity="0.8"
+        >
+          1
+        </text>
+        <text
+          x="45"
+          y="48"
+          textAnchor="middle"
+          className="fill-current text-xs font-light"
+          opacity="0.8"
+        >
+          3
+        </text>
+        <text
+          x="65"
+          y="48"
+          textAnchor="middle"
+          className="fill-current text-xs font-light"
+          opacity="0.8"
+        >
+          7
+        </text>
+
+        {/* Scan line effect */}
+        <rect
+          x="15"
+          y="30"
+          width="70"
+          height="2"
+          fill="currentColor"
+          opacity="0.1"
+        >
+          <animate
+            attributeName="y"
+            values="15;85;15"
+            dur="4s"
+            repeatCount="indefinite"
+          />
+          <animate
+            attributeName="opacity"
+            values="0.1;0.4;0.1"
+            dur="4s"
+            repeatCount="indefinite"
+          />
+        </rect>
+      </svg>
+    ),
+    available: true,
+  },
+  {
     id: "memory-lock",
     name: "MemoryLock",
     description: "Mastermind meets digit span",
