@@ -31,7 +31,8 @@ const games = [
   {
     id: "number-flow",
     name: "NumberFlow",
-    description: "2048 meets Unify. Merge matching numbers in a flowing grid.",
+    description:
+      "2048 meets Unify. Merge matching numbers in a flowing grid and get to 2048 to win.",
     icon: (
       <svg viewBox="0 0 100 100" className="w-full h-full">
         <rect
@@ -102,6 +103,58 @@ const games = [
         >
           16
         </text>
+      </svg>
+    ),
+    available: true,
+  },
+  {
+    id: "synapse",
+    name: "Synapse",
+    description:
+      "Encode numbers into words and recall them by drawing unique patterns. A game to expand your digit span.",
+    icon: (
+      <svg viewBox="0 0 100 100" className="w-full h-full">
+        {/* Neuron Body */}
+        <circle cx="50" cy="50" r="8" fill="currentColor" opacity="0.8" />
+
+        {/* Inactive Synapses and Connections */}
+        <circle cx="20" cy="25" r="5" fill="currentColor" opacity="0.4" />
+        <path
+          d="M 50 50 Q 30 35 20 25"
+          stroke="currentColor"
+          strokeWidth="2"
+          fill="none"
+          opacity="0.3"
+        />
+
+        <circle cx="80" cy="25" r="5" fill="currentColor" opacity="0.4" />
+        <path
+          d="M 50 50 Q 70 35 80 25"
+          stroke="currentColor"
+          strokeWidth="2"
+          fill="none"
+          opacity="0.3"
+        />
+
+        <circle cx="20" cy="75" r="5" fill="currentColor" opacity="0.4" />
+        <path
+          d="M 50 50 Q 30 65 20 75"
+          stroke="currentColor"
+          strokeWidth="2"
+          fill="none"
+          opacity="0.3"
+        />
+
+        {/* Active Synapse and Connection */}
+        <path
+          d="M 50 50 Q 70 65 80 75"
+          stroke="currentColor"
+          strokeWidth="3"
+          fill="none"
+          opacity="0.9"
+          strokeLinecap="round"
+        />
+        <circle cx="80" cy="75" r="6" fill="currentColor" opacity="0.9" />
       </svg>
     ),
     available: true,

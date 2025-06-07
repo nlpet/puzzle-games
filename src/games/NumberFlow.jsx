@@ -31,6 +31,7 @@ const CELL_SIZE = 48;
 const CENTER_X = Math.floor(GRID_WIDTH / 2);
 const CENTER_Y = Math.floor(GRID_HEIGHT / 2);
 
+// CHANGE 2: 2048 is now gold
 const getNumberColor = (number) => {
   const colors = {
     2: "#ffffff",
@@ -42,15 +43,14 @@ const getNumberColor = (number) => {
     128: "#228b22",
     256: "#8b4513",
     512: "#8844ff",
-    1024: "#4b0082",
-    2048: "black",
-    4096: "#ff0088",
-    8192: "#8800ff",
+    1024: "#cfe2f3",
+    2048: "#FFD700", // Gold
+    4096: "#ead1dc",
+    8192: "#6aa84f",
   };
   return colors[number] || "#888888";
 };
 
-// --- Initial State for the Reducer ---
 const initialState = {
   grid: Array(GRID_HEIGHT)
     .fill(null)
@@ -67,7 +67,7 @@ const initialState = {
   pieceCount: 0,
 };
 
-// --- The New, No-Gravity Game Engine ---
+// --- The Stable, No-Gravity Game Engine ---
 function gameReducer(state, action) {
   switch (action.type) {
     case "RESET":
@@ -104,29 +104,9 @@ function gameReducer(state, action) {
         newY >= GRID_HEIGHT ||
         (side === "left" && newX >= CENTER_X) ||
         (side === "right" && newX <= CENTER_X)
-      ) {
+      )
         return state;
-      }
-
-      const targetCell = state.grid[newY]?.[newX];
-      if (targetCell) {
-        if (targetCell.number === piece.numbers[0][0]) {
-          let grid = state.grid.map((r) => [...r]);
-          const n = targetCell.number * 2;
-          grid[newY][newX] = { number: n, color: getNumberColor(n) };
-          grid[piece.y][piece.x] = null;
-
-          const newState = {
-            ...state,
-            grid,
-            [setPieceKey]: null,
-            score: state.score + n,
-            highestNumber: Math.max(state.highestNumber, n),
-          };
-          return gameReducer(newState, { type: "SETTLE_GRID" });
-        }
-        return state; // Blocked
-      }
+      if (state.grid[newY]?.[newX]) return state; // Blocked
 
       return { ...state, [setPieceKey]: { ...piece, x: newX, y: newY } };
     }
@@ -281,17 +261,11 @@ function gameReducer(state, action) {
 
       // NO GRAVITY. EVER.
 
-      let blockCount = 0,
-        has2048 = false,
-        isGameOver = false;
+      // CHANGE 1: Correct win condition check
+      const gameIsWon = grid[CENTER_Y]?.[CENTER_X]?.number === 2048;
+      let isGameOver = false;
       for (let y = 0; y < GRID_HEIGHT; y++) {
         if (grid[y][0] || grid[y][GRID_WIDTH - 1]) isGameOver = true;
-        for (let x = 0; x < GRID_WIDTH; x++) {
-          if (grid[y][x]) {
-            blockCount++;
-            if (grid[y][x].number === 2048) has2048 = true;
-          }
-        }
       }
 
       return {
@@ -299,9 +273,9 @@ function gameReducer(state, action) {
         grid,
         score,
         highestNumber,
-        gameWon: has2048 && blockCount === 1,
-        gameOver: isGameOver && !(has2048 && blockCount === 1),
-        isPlaying: !(has2048 && blockCount === 1) && !isGameOver,
+        gameWon: gameIsWon,
+        gameOver: isGameOver && !gameIsWon,
+        isPlaying: !gameIsWon && !isGameOver,
       };
     }
     default:
@@ -309,9 +283,10 @@ function gameReducer(state, action) {
   }
 }
 
+// CHANGE 3: Slower, more random piece generation
 const generatePiece = (side, pieceCount) => {
-  const maxLevel = Math.min(11, 1 + Math.floor(pieceCount / 10));
-  const level = Math.ceil(Math.random() * maxLevel);
+  const maxLevel = Math.min(11, 1 + Math.floor(pieceCount / 30));
+  const level = Math.ceil(Math.pow(Math.random(), 2) * maxLevel);
   const baseNumber = Math.pow(2, level);
   return {
     shape: [[[1]]],
@@ -336,7 +311,11 @@ function NumberFlow() {
     gameOver,
     gameWon,
     speedLevel,
+    isPaused,
   } = state;
+
+  // CHANGE 4: Faster game speed
+  const gamePace = 1200 - (speedLevel - 1) * 100;
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -346,8 +325,6 @@ function NumberFlow() {
     );
     return () => clearInterval(speedTimer);
   }, [isPlaying, state.speedLevel]);
-
-  const gamePace = 1600 - speedLevel * 100;
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -410,8 +387,7 @@ function NumberFlow() {
     const isCenterBlock = x === CENTER_X && y === CENTER_Y;
     let content = "",
       bgColor = "transparent",
-      textColor = "#ffffff",
-      isRainbow = false;
+      textColor = "#ffffff";
     let isPieceCell = false,
       pieceNumber = null,
       pieceColor = null;
@@ -428,21 +404,27 @@ function NumberFlow() {
     if (cell) {
       content = cell.number.toString();
       bgColor = cell.color;
-      isRainbow = cell.color === "rainbow";
       textColor =
-        cell.number === 2 || cell.number === 4 || cell.number === 16
+        cell.number === 2 ||
+        cell.number === 4 ||
+        cell.number === 16 ||
+        cell.number === 2048
           ? "#000000"
           : "#ffffff";
     } else if (isPieceCell) {
       content = pieceNumber.toString();
       bgColor = pieceColor;
-      isRainbow = pieceColor === "rainbow";
       textColor =
         pieceNumber === 2 || pieceNumber === 4 || pieceNumber === 16
           ? "#000000"
           : "#ffffff";
     }
     const hasContent = cell || isPieceCell;
+    // CHANGE 5: Bigger, lighter drop shadow
+    const shadowStyle = hasContent
+      ? { boxShadow: "3px 5px 5px rgba(20, 20, 20, 0.5)" }
+      : {};
+
     return (
       <div
         key={`${x}-${y}`}
@@ -454,12 +436,6 @@ function NumberFlow() {
         style={{
           width: CELL_SIZE,
           height: CELL_SIZE,
-          backgroundColor:
-            isCenterBlock && !hasContent
-              ? "#1a202c"
-              : isRainbow
-              ? "transparent"
-              : bgColor,
           borderTop: "1px solid rgba(255,255,255,0.05)",
           borderLeft: isCenterColumn
             ? "none"
@@ -488,9 +464,7 @@ function NumberFlow() {
           <div
             className="absolute inset-0 flex items-center justify-center font-bold"
             style={{
-              background: isRainbow
-                ? "linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3)"
-                : bgColor,
+              background: bgColor,
               color: textColor,
               fontSize:
                 content.length > 3
@@ -500,6 +474,7 @@ function NumberFlow() {
                   : "24px",
               fontFamily: "JetBrains Mono, monospace",
               zIndex: 2,
+              ...shadowStyle,
             }}
           >
             {content}
@@ -518,32 +493,24 @@ function NumberFlow() {
       style={{ fontFamily: "Roboto Mono, Inter, sans-serif" }}
     >
       <div className="w-full max-w-6xl">
-        {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-6xl mb-4 font-light tracking-tight">
             NumberFlow_
           </h1>
           <p className="text-gray-400 text-lg font-light">
-            Merge matching numbers to reach 2048 in the middle grid cell denoted
-            with X.
+            Merge matching numbers to create a 2048 block in the center cell.
           </p>
         </div>
-        {/* Game Won/Over Messages */}
         {gameWon && (
-          <div className="text-center mb-8 p-8 border-2 border-gray-500 rounded-lg bg-gray-950">
+          <div className="text-center mb-8 p-8 border-2 border-yellow-400 rounded-lg bg-gray-950">
             <div
               className="text-4xl mb-3 font-bold"
-              style={{
-                background:
-                  "linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-              }}
+              style={{ color: getNumberColor(2048) }}
             >
               YOU WON!
             </div>
             <div className="text-gray-300 text-lg font-light">
-              You created a single 2048 block!
+              You created a 2048 block in the center!
             </div>
             <div className="text-2xl mt-4 font-light">
               Final Score: <span className="text-white font-bold">{score}</span>
@@ -562,7 +529,6 @@ function NumberFlow() {
             </div>
           </div>
         )}
-        {/* Game Stats */}
         <div className="flex justify-center mb-8 space-x-20">
           <div className="text-center">
             <div
@@ -580,13 +546,7 @@ function NumberFlow() {
               className="text-5xl text-white mb-2 font-light"
               style={{
                 fontFamily: "Roboto Mono, JetBrains Mono, monospace",
-                background:
-                  highestNumber === 2048
-                    ? "linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3)"
-                    : "none",
-                WebkitBackgroundClip: highestNumber === 2048 ? "text" : "none",
-                WebkitTextFillColor:
-                  highestNumber === 2048 ? "transparent" : "white",
+                color: getNumberColor(highestNumber),
               }}
             >
               {highestNumber}
@@ -596,7 +556,6 @@ function NumberFlow() {
             </div>
           </div>
         </div>
-        {/* Game Grid */}
         <div className="flex justify-center mb-8">
           <div
             className="bg-gray-950 border-2 border-gray-800 rounded-lg"
@@ -613,7 +572,6 @@ function NumberFlow() {
             )}
           </div>
         </div>
-        {/* Compact Controls */}
         <div className="flex flex-col items-center gap-6">
           <button
             onClick={() => dispatch({ type: "TOGGLE_PAUSE" })}
@@ -626,18 +584,16 @@ function NumberFlow() {
             }`}
             style={{
               fontFamily: "JetBrains Mono, monospace",
-              background: gameWon
-                ? "linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3)"
-                : "",
-              color: gameWon ? "white" : "",
-              textShadow: gameWon ? "0 2px 4px rgba(0,0,0,0.5)" : "",
+              background: gameWon ? getNumberColor(2048) : "",
+              color: gameWon ? "black" : "",
+              textShadow: gameWon ? "0 1px 2px rgba(0,0,0,0.2)" : "",
             }}
           >
             {gameWon || gameOver
               ? "NEW GAME"
               : isPlaying
               ? "PAUSE"
-              : state.isPaused
+              : isPaused
               ? "RESUME"
               : "START"}
           </button>
@@ -763,8 +719,8 @@ function NumberFlow() {
           </div>
           <div className="text-center mt-8">
             <p className="text-gray-500 text-sm">
-              Move blocks with W/S/D (left) and ↑/←/↓ (right) • Match same
-              numbers • Create a 2048 block in the centre to win
+              Move blocks with W/S/D (left) and ↑/←/↓ (right) • Create a 2048
+              block in the centre to win
             </p>
           </div>
         </div>

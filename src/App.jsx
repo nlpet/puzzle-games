@@ -4,6 +4,7 @@ import { HashRouter as Router, Routes, Route } from "react-router-dom";
 import LandingPage from "./components/LandingPage";
 import GameFrame from "./components/GameFrame";
 import NumberFlow from "./games/NumberFlow";
+import Synapse from "./games/Synapse";
 
 function App() {
   return (
@@ -19,7 +20,15 @@ function App() {
             </GameFrame>
           }
         />
-        {/* Add more game routes */}
+        {/* 2. Add the route for Synapse */}
+        <Route
+          path="/game/synapse"
+          element={
+            <GameFrame>
+              <Synapse />
+            </GameFrame>
+          }
+        />
       </Routes>
     </Router>
   );
