@@ -31,7 +31,59 @@ const CELL_SIZE = 48;
 const CENTER_X = Math.floor(GRID_WIDTH / 2);
 const CENTER_Y = Math.floor(GRID_HEIGHT / 2);
 
-// CHANGE 2: 2048 is now gold
+const SHAPES = {
+  // Level 1: Single block
+  SINGLE: { shape: [[1]] },
+
+  // Level 2: Dominoes (safe - single row/column)
+  DOMINO_H: { shape: [[1, 1]] },
+  DOMINO_V: {
+    shape: [[1], [1]],
+  },
+
+  // Level 3: L-shapes (safe - offset rows can't self-merge)
+  L_SMALL: {
+    shape: [
+      [1, 0],
+      [1, 1],
+    ],
+  },
+  L_SMALL_FLIP: {
+    shape: [
+      [0, 1],
+      [1, 1],
+    ],
+  },
+
+  // Level 4: Z-shapes (safe - offset rows)
+  Z_MINI: {
+    shape: [
+      [1, 1, 0],
+      [0, 1, 1],
+    ],
+  },
+  S_MINI: {
+    shape: [
+      [0, 1, 1],
+      [1, 1, 0],
+    ],
+  },
+
+  // Level 5: Longer single lines (safe - single row/column)
+  LINE_3: { shape: [[1, 1, 1]] },
+  LINE_3_V: {
+    shape: [[1], [1], [1]],
+  },
+
+  // Level 6: T-shape rotations (safe - center prevents self-merge)
+  T_UP: {
+    shape: [
+      [0, 1, 0],
+      [1, 1, 1],
+    ],
+  },
+};
+
 const getNumberColor = (number) => {
   const colors = {
     2: "#ffffff",
@@ -43,10 +95,10 @@ const getNumberColor = (number) => {
     128: "#228b22",
     256: "#8b4513",
     512: "#8844ff",
-    1024: "#cfe2f3",
-    2048: "#FFD700", // Gold
-    4096: "#ead1dc",
-    8192: "#6aa84f",
+    1024: "#4b0082",
+    2048: "#FFD700",
+    4096: "#ff0088",
+    8192: "#8800ff",
   };
   return colors[number] || "#888888";
 };
@@ -58,13 +110,36 @@ const initialState = {
   leftPiece: null,
   rightPiece: null,
   score: 0,
-  highestNumber: 2,
+  highestNumber: 0,
   isPlaying: false,
   gameOver: false,
   gameWon: false,
   speedLevel: 1,
   isPaused: false,
   pieceCount: 0,
+};
+
+const rotateShape = (shape) =>
+  shape[0].map((_, colIndex) => shape.map((row) => row[colIndex])).reverse();
+
+const isValidMove = (piece, grid) => {
+  for (let r = 0; r < piece.shape.length; r++) {
+    for (let c = 0; c < piece.shape[r].length; c++) {
+      if (piece.shape[r][c]) {
+        const gridX = piece.x + c;
+        const gridY = piece.y + r;
+        if (
+          gridY < 0 ||
+          gridY >= GRID_HEIGHT ||
+          gridX < 0 ||
+          gridX >= GRID_WIDTH
+        )
+          return false;
+        if (grid[gridY]?.[gridX]) return false;
+      }
+    }
+  }
+  return true;
 };
 
 // --- The Stable, No-Gravity Game Engine ---
@@ -83,7 +158,61 @@ function gameReducer(state, action) {
       };
 
     case "SET_SPEED":
-      return { ...state, speedLevel: Math.min(10, Math.max(1, action.level)) };
+      // Only allow automatic level progression, not manual changes
+      if (action.automatic) {
+        return {
+          ...state,
+          speedLevel: Math.min(10, Math.max(1, action.level)),
+        };
+      }
+      return state;
+
+    case "ROTATE_PIECE": {
+      if (!state.isPlaying) return state;
+      const { side } = action.payload;
+      const piece = side === "left" ? state.leftPiece : state.rightPiece;
+      const setPieceKey = side === "left" ? "leftPiece" : "rightPiece";
+
+      if (!piece) return state;
+
+      const rotatedShape = rotateShape(piece.shape);
+      const newPiece = { ...piece, shape: rotatedShape };
+
+      // Check if rotation would go out of bounds or past the center
+      for (let r = 0; r < newPiece.shape.length; r++) {
+        for (let c = 0; c < newPiece.shape[r].length; c++) {
+          if (newPiece.shape[r][c]) {
+            const gridX = newPiece.x + c;
+            const gridY = newPiece.y + r;
+
+            // Check boundaries
+            if (
+              gridY < 0 ||
+              gridY >= GRID_HEIGHT ||
+              gridX < 0 ||
+              gridX >= GRID_WIDTH
+            ) {
+              return state;
+            }
+
+            // Check center boundary
+            if (
+              (side === "left" && gridX > CENTER_X) ||
+              (side === "right" && gridX < CENTER_X)
+            ) {
+              return state;
+            }
+
+            // Check collision with existing blocks
+            if (state.grid[gridY]?.[gridX]) {
+              return state;
+            }
+          }
+        }
+      }
+
+      return { ...state, [setPieceKey]: newPiece };
+    }
 
     case "MOVE_PIECE": {
       if (!state.isPlaying) return state;
@@ -92,23 +221,71 @@ function gameReducer(state, action) {
       const setPieceKey = side === "left" ? "leftPiece" : "rightPiece";
       if (!piece) return state;
 
-      let newX = piece.x,
-        newY = piece.y;
-      if (direction === "up") newY--;
-      if (direction === "down") newY++;
-      if (direction === "right" && side === "left") newX++;
-      if (direction === "left" && side === "right") newX--;
-
+      // FIX: Prevent backward movement
       if (
-        newY < 0 ||
-        newY >= GRID_HEIGHT ||
-        (side === "left" && newX >= CENTER_X) ||
-        (side === "right" && newX <= CENTER_X)
-      )
+        (side === "left" && direction === "left") ||
+        (side === "right" && direction === "right")
+      ) {
         return state;
-      if (state.grid[newY]?.[newX]) return state; // Blocked
+      }
 
-      return { ...state, [setPieceKey]: { ...piece, x: newX, y: newY } };
+      let deltaX = 0,
+        deltaY = 0;
+      if (direction === "up") deltaY = -1;
+      if (direction === "down") deltaY = 1;
+      if (direction === "right") deltaX = 1;
+      if (direction === "left") deltaX = -1;
+
+      const newPiece = { ...piece, x: piece.x + deltaX, y: piece.y + deltaY };
+
+      const collisionPoints = [];
+      let canMerge = true;
+      let isBlocked = false;
+
+      for (let r = 0; r < newPiece.shape.length; r++) {
+        for (let c = 0; c < newPiece.shape[r].length; c++) {
+          if (newPiece.shape[r][c]) {
+            const gridX = newPiece.x + c;
+            const gridY = newPiece.y + r;
+
+            if (
+              (side === "left" && gridX > CENTER_X) ||
+              (side === "right" && gridX < CENTER_X)
+            ) {
+              isBlocked = true;
+              break;
+            }
+
+            const targetCell = state.grid[gridY]?.[gridX];
+            if (targetCell) {
+              collisionPoints.push({ x: gridX, y: gridY });
+              if (targetCell.number !== piece.number) canMerge = false;
+            }
+          }
+        }
+        if (isBlocked) break;
+      }
+
+      if (isBlocked) return state;
+
+      if (collisionPoints.length > 0) {
+        if (
+          canMerge &&
+          collisionPoints.length ===
+            newPiece.shape.flat().filter(Boolean).length
+        ) {
+          return gameReducer(state, {
+            type: "MERGE_PIECES",
+            payload: { movingPiece: newPiece },
+          });
+        }
+        return state; // Blocked by non-matching piece
+      }
+
+      if (isValidMove(newPiece, state.grid)) {
+        return { ...state, [setPieceKey]: newPiece };
+      }
+      return state;
     }
 
     case "TICK": {
@@ -121,14 +298,30 @@ function gameReducer(state, action) {
       } else {
         const { leftPiece } = nextState;
         const newX = leftPiece.x + 1;
-        if (newX >= CENTER_X || nextState.grid[leftPiece.y]?.[newX]) {
+        let collision = false;
+
+        for (let r = 0; r < leftPiece.shape.length; r++) {
+          for (let c = 0; c < leftPiece.shape[r].length; c++) {
+            if (leftPiece.shape[r][c]) {
+              const gridX = leftPiece.x + c + 1;
+              const gridY = leftPiece.y + r;
+
+              if (gridX > CENTER_X || state.grid[gridY]?.[gridX]) {
+                collision = true;
+                break;
+              }
+            }
+          }
+          if (collision) break;
+        }
+
+        if (collision) {
           return gameReducer(nextState, {
             type: "PLACE_PIECE",
             payload: leftPiece,
           });
-        } else {
-          nextState.leftPiece = { ...leftPiece, x: newX };
         }
+        nextState.leftPiece = { ...leftPiece, x: newX };
       }
 
       if (!nextState.rightPiece) {
@@ -137,14 +330,30 @@ function gameReducer(state, action) {
       } else {
         const { rightPiece } = nextState;
         const newX = rightPiece.x - 1;
-        if (newX <= CENTER_X || nextState.grid[rightPiece.y]?.[newX]) {
+        let collision = false;
+
+        for (let r = 0; r < rightPiece.shape.length; r++) {
+          for (let c = 0; c < rightPiece.shape[r].length; c++) {
+            if (rightPiece.shape[r][c]) {
+              const gridX = rightPiece.x + c - 1;
+              const gridY = rightPiece.y + r;
+
+              if (gridX < CENTER_X || state.grid[gridY]?.[gridX]) {
+                collision = true;
+                break;
+              }
+            }
+          }
+          if (collision) break;
+        }
+
+        if (collision) {
           return gameReducer(nextState, {
             type: "PLACE_PIECE",
             payload: rightPiece,
           });
-        } else {
-          nextState.rightPiece = { ...rightPiece, x: newX };
         }
+        nextState.rightPiece = { ...rightPiece, x: newX };
       }
       return nextState;
     }
@@ -152,34 +361,49 @@ function gameReducer(state, action) {
     case "PLACE_PIECE": {
       const piece = action.payload;
       let grid = state.grid.map((r) => [...r]);
-      const intendedX = piece.side === "left" ? piece.x + 1 : piece.x - 1;
-      const intendedY = piece.y;
-      const targetCell = grid[intendedY]?.[intendedX];
-      let finalX = piece.x;
-      let pieceConsumed = false;
-      let score = state.score;
-      let highestNumber = state.highestNumber;
 
-      if (intendedX === CENTER_X) {
-        if (!targetCell) {
-          finalX = intendedX;
-        } else if (
-          intendedY === CENTER_Y &&
-          targetCell.number === piece.numbers[0][0]
-        ) {
-          const n = targetCell.number * 2;
-          grid[intendedY][intendedX] = { number: n, color: getNumberColor(n) };
-          pieceConsumed = true;
-          score += n;
-          highestNumber = Math.max(highestNumber, n);
+      for (let r = 0; r < piece.shape.length; r++) {
+        for (let c = 0; c < piece.shape[r].length; c++) {
+          if (piece.shape[r][c]) {
+            grid[piece.y + r][piece.x + c] = {
+              number: piece.number,
+              color: piece.color,
+              pieceId: piece.id,
+            };
+          }
         }
       }
 
-      if (!pieceConsumed) {
-        grid[piece.y][finalX] = {
-          number: piece.numbers[0][0],
-          color: piece.color,
-        };
+      const newState = {
+        ...state,
+        grid,
+        leftPiece: piece.side === "left" ? null : state.leftPiece,
+        rightPiece: piece.side === "right" ? null : state.rightPiece,
+      };
+      return gameReducer(newState, { type: "SETTLE_GRID" });
+    }
+
+    case "MERGE_PIECES": {
+      const { movingPiece } = action.payload;
+      let grid = state.grid.map((r) => [...r]);
+      let score = state.score;
+      let highestNumber = state.highestNumber;
+      const newNumber = movingPiece.number * 2;
+
+      for (let r = 0; r < movingPiece.shape.length; r++) {
+        for (let c = 0; c < movingPiece.shape[r].length; c++) {
+          if (movingPiece.shape[r][c]) {
+            const gridX = movingPiece.x + c;
+            const gridY = movingPiece.y + r;
+            grid[gridY][gridX] = {
+              number: newNumber,
+              color: getNumberColor(newNumber),
+              pieceId: movingPiece.id,
+            };
+            score += newNumber;
+            highestNumber = Math.max(highestNumber, newNumber);
+          }
+        }
       }
 
       const newState = {
@@ -187,8 +411,8 @@ function gameReducer(state, action) {
         grid,
         score,
         highestNumber,
-        leftPiece: piece.side === "left" ? null : state.leftPiece,
-        rightPiece: piece.side === "right" ? null : state.rightPiece,
+        leftPiece: movingPiece.side === "left" ? null : state.leftPiece,
+        rightPiece: movingPiece.side === "right" ? null : state.rightPiece,
       };
       return gameReducer(newState, { type: "SETTLE_GRID" });
     }
@@ -198,19 +422,23 @@ function gameReducer(state, action) {
       let score = state.score;
       let highestNumber = state.highestNumber;
       let changedInPass;
-
       do {
         changedInPass = false;
-        // Horizontal Merges
+        // Horizontal & Central Merges
         for (let y = 0; y < GRID_HEIGHT; y++) {
           for (let x = 0; x < CENTER_X; x++) {
             if (
               grid[y][x] &&
               grid[y][x + 1] &&
-              grid[y][x].number === grid[y][x + 1].number
+              grid[y][x].number === grid[y][x + 1].number &&
+              grid[y][x].pieceId !== grid[y][x + 1].pieceId
             ) {
               const n = grid[y][x].number * 2;
-              grid[y][x + 1] = { number: n, color: getNumberColor(n) };
+              grid[y][x + 1] = {
+                number: n,
+                color: getNumberColor(n),
+                pieceId: Date.now() + Math.random(), // New ID for merged cell
+              };
               grid[y][x] = null;
               score += n;
               if (n > highestNumber) highestNumber = n;
@@ -221,10 +449,15 @@ function gameReducer(state, action) {
             if (
               grid[y][x] &&
               grid[y][x - 1] &&
-              grid[y][x].number === grid[y][x - 1].number
+              grid[y][x].number === grid[y][x - 1].number &&
+              grid[y][x].pieceId !== grid[y][x - 1].pieceId
             ) {
               const n = grid[y][x].number * 2;
-              grid[y][x - 1] = { number: n, color: getNumberColor(n) };
+              grid[y][x - 1] = {
+                number: n,
+                color: getNumberColor(n),
+                pieceId: Date.now() + Math.random(), // New ID for merged cell
+              };
               grid[y][x] = null;
               score += n;
               if (n > highestNumber) highestNumber = n;
@@ -232,7 +465,6 @@ function gameReducer(state, action) {
             }
           }
         }
-        // Central Pull
         const centerBlock = grid[CENTER_Y][CENTER_X];
         if (centerBlock) {
           const positions = [
@@ -243,11 +475,16 @@ function gameReducer(state, action) {
           ];
           for (const pos of positions) {
             const adj = grid[pos.y]?.[pos.x];
-            if (adj && adj.number === centerBlock.number) {
+            if (
+              adj &&
+              adj.number === centerBlock.number &&
+              adj.pieceId !== centerBlock.pieceId
+            ) {
               const n = centerBlock.number * 2;
               grid[CENTER_Y][CENTER_X] = {
                 number: n,
                 color: getNumberColor(n),
+                pieceId: Date.now() + Math.random(), // New ID for merged cell
               };
               grid[pos.y][pos.x] = null;
               score += n;
@@ -259,15 +496,11 @@ function gameReducer(state, action) {
         }
       } while (changedInPass);
 
-      // NO GRAVITY. EVER.
-
-      // CHANGE 1: Correct win condition check
       const gameIsWon = grid[CENTER_Y]?.[CENTER_X]?.number === 2048;
       let isGameOver = false;
       for (let y = 0; y < GRID_HEIGHT; y++) {
         if (grid[y][0] || grid[y][GRID_WIDTH - 1]) isGameOver = true;
       }
-
       return {
         ...state,
         grid,
@@ -283,16 +516,58 @@ function gameReducer(state, action) {
   }
 }
 
-// CHANGE 3: Slower, more random piece generation
 const generatePiece = (side, pieceCount) => {
-  const maxLevel = Math.min(11, 1 + Math.floor(pieceCount / 30));
+  // Add slight variation between sides
+  const sideModifier = side === "left" ? 0 : 5;
+  const adjustedCount = pieceCount + sideModifier;
+
+  // Progressive shape difficulty with some randomness
+  let shapePool = ["SINGLE"]; // Always have single blocks
+
+  // Add shapes based on piece count with some probability
+  if (adjustedCount >= 8 && Math.random() < 0.8) {
+    shapePool.push("DOMINO_H", "DOMINO_V");
+  }
+  if (adjustedCount >= 20 && Math.random() < 0.7) {
+    shapePool.push("L_SMALL", "L_SMALL_FLIP");
+  }
+  if (adjustedCount >= 35 && Math.random() < 0.6) {
+    shapePool.push("Z_MINI", "S_MINI");
+  }
+  if (adjustedCount >= 50 && Math.random() < 0.5) {
+    shapePool.push("LINE_3", "LINE_3_V");
+  }
+  if (adjustedCount >= 70 && Math.random() < 0.4) {
+    shapePool.push("T_UP");
+  }
+
+  // Add side-specific bias
+  if (side === "left" && pieceCount > 15) {
+    shapePool.push("DOMINO_H"); // Left side gets more horizontal pieces
+  } else if (side === "right" && pieceCount > 15) {
+    shapePool.push("DOMINO_V"); // Right side gets more vertical pieces
+  }
+
+  // Add more weight to simpler shapes early on
+  if (pieceCount < 30) {
+    shapePool.push("SINGLE");
+  }
+
+  const shapeKey = shapePool[Math.floor(Math.random() * shapePool.length)];
+
+  // Progressive number difficulty with side variation
+  const maxLevel = Math.min(11, 1 + Math.floor(adjustedCount / 30));
   const level = Math.ceil(Math.pow(Math.random(), 2) * maxLevel);
   const baseNumber = Math.pow(2, level);
+
+  const shape = SHAPES[shapeKey].shape;
+  const y = Math.floor(Math.random() * (GRID_HEIGHT - shape.length));
+
   return {
-    shape: [[[1]]],
-    numbers: [[baseNumber]],
-    x: side === "left" ? 0 : GRID_WIDTH - 1,
-    y: Math.floor(Math.random() * GRID_HEIGHT),
+    shape: shape,
+    number: baseNumber,
+    x: side === "left" ? 0 : GRID_WIDTH - shape[0].length,
+    y: y,
     side: side,
     id: Date.now() + Math.random(),
     color: getNumberColor(baseNumber),
@@ -313,14 +588,17 @@ function NumberFlow() {
     speedLevel,
     isPaused,
   } = state;
-
-  // CHANGE 4: Faster game speed
-  const gamePace = 1200 - (speedLevel - 1) * 100;
+  const gamePace = 1200 - (speedLevel - 1) * 75;
 
   useEffect(() => {
     if (!isPlaying) return;
     const speedTimer = setInterval(
-      () => dispatch({ type: "SET_SPEED", level: state.speedLevel + 1 }),
+      () =>
+        dispatch({
+          type: "SET_SPEED",
+          level: state.speedLevel + 1,
+          automatic: true,
+        }),
       60000
     );
     return () => clearInterval(speedTimer);
@@ -354,6 +632,15 @@ function NumberFlow() {
             payload: { side: "left", direction: "right" },
           });
           break;
+        case "a":
+          dispatch({
+            type: "MOVE_PIECE",
+            payload: { side: "left", direction: "left" },
+          });
+          break;
+        case "e":
+          dispatch({ type: "ROTATE_PIECE", payload: { side: "left" } });
+          break;
         case "arrowup":
           e.preventDefault();
           dispatch({
@@ -375,6 +662,17 @@ function NumberFlow() {
             payload: { side: "right", direction: "left" },
           });
           break;
+        case "arrowright":
+          e.preventDefault();
+          dispatch({
+            type: "MOVE_PIECE",
+            payload: { side: "right", direction: "right" },
+          });
+          break;
+        case " ":
+          e.preventDefault();
+          dispatch({ type: "ROTATE_PIECE", payload: { side: "right" } });
+          break;
       }
     };
     window.addEventListener("keydown", handleKeyPress);
@@ -382,54 +680,41 @@ function NumberFlow() {
   }, [isPlaying]);
 
   const renderCell = (x, y) => {
-    const cell = grid[y][x];
-    const isCenterColumn = x === CENTER_X;
-    const isCenterBlock = x === CENTER_X && y === CENTER_Y;
-    let content = "",
-      bgColor = "transparent",
-      textColor = "#ffffff";
-    let isPieceCell = false,
-      pieceNumber = null,
-      pieceColor = null;
-    if (leftPiece && leftPiece.x === x && leftPiece.y === y) {
-      isPieceCell = true;
-      pieceNumber = leftPiece.numbers[0][0];
-      pieceColor = leftPiece.color;
-    }
-    if (rightPiece && rightPiece.x === x && rightPiece.y === y) {
-      isPieceCell = true;
-      pieceNumber = rightPiece.numbers[0][0];
-      pieceColor = rightPiece.color;
-    }
-    if (cell) {
-      content = cell.number.toString();
-      bgColor = cell.color;
-      textColor =
-        cell.number === 2 ||
-        cell.number === 4 ||
-        cell.number === 16 ||
-        cell.number === 2048
-          ? "#000000"
-          : "#ffffff";
-    } else if (isPieceCell) {
-      content = pieceNumber.toString();
-      bgColor = pieceColor;
-      textColor =
-        pieceNumber === 2 || pieceNumber === 4 || pieceNumber === 16
-          ? "#000000"
-          : "#ffffff";
-    }
-    const hasContent = cell || isPieceCell;
-    // CHANGE 5: Bigger, lighter drop shadow
+    let cell = grid[y][x];
+    let pieceColor = null;
+    let pieceNumber = null;
+    const checkPiece = (piece) => {
+      if (!piece) return;
+      const pX = x - piece.x;
+      const pY = y - piece.y;
+      if (
+        pY >= 0 &&
+        pY < piece.shape.length &&
+        pX >= 0 &&
+        pX < piece.shape[pY].length &&
+        piece.shape[pY][pX]
+      ) {
+        pieceColor = piece.color;
+        pieceNumber = piece.number;
+      }
+    };
+    checkPiece(leftPiece);
+    checkPiece(rightPiece);
+    const hasContent = cell || pieceNumber;
+    let content = cell?.number ?? pieceNumber ?? "";
+    let bgColor = cell?.color ?? pieceColor ?? "transparent";
+    let textColor =
+      content === 2 || content === 4 || content === 16 || content === 2048
+        ? "#000000"
+        : "#ffffff";
     const shadowStyle = hasContent
-      ? { boxShadow: "3px 5px 5px rgba(20, 20, 20, 0.5)" }
+      ? { boxShadow: "3px 5px 5px rgba(20, 20, 20, 0.3)" }
       : {};
-
     return (
       <div
         key={`${x}-${y}`}
         className={`relative flex items-center justify-center transition-all duration-200 ${
-          isCenterColumn
+          x === CENTER_X
             ? "border-l-2 border-r-2 border-gray-700 border-dashed"
             : ""
         }`}
@@ -437,22 +722,20 @@ function NumberFlow() {
           width: CELL_SIZE,
           height: CELL_SIZE,
           borderTop: "1px solid rgba(255,255,255,0.05)",
-          borderLeft: isCenterColumn
-            ? "none"
-            : "1px solid rgba(255,255,255,0.05)",
-          borderRight: isCenterColumn
-            ? "none"
-            : "1px solid rgba(255,255,255,0.05)",
+          borderLeft:
+            x === CENTER_X ? "none" : "1px solid rgba(255,255,255,0.05)",
+          borderRight:
+            x === CENTER_X ? "none" : "1px solid rgba(255,255,255,0.05)",
           borderBottom: "1px solid rgba(255,255,255,0.05)",
         }}
       >
-        {isCenterBlock && !hasContent && (
+        {x === CENTER_X && y === CENTER_Y && !hasContent && (
           <>
             <div className="absolute w-[2px] h-[calc(100%-12px)] bg-gray-700 transform rotate-45" />
             <div className="absolute w-[2px] h-[calc(100%-12px)] bg-gray-700 transform -rotate-45" />
           </>
         )}
-        {isCenterBlock && hasContent && (
+        {x === CENTER_X && y === CENTER_Y && cell && (
           <div
             className="absolute inset-0 flex items-center justify-center text-4xl"
             style={{ color: "rgba(255, 255, 255, 0.1)", zIndex: 1 }}
@@ -467,9 +750,9 @@ function NumberFlow() {
               background: bgColor,
               color: textColor,
               fontSize:
-                content.length > 3
+                content.toString().length > 3
                   ? "16px"
-                  : content.length > 2
+                  : content.toString().length > 2
                   ? "20px"
                   : "24px",
               fontFamily: "JetBrains Mono, monospace",
@@ -480,7 +763,7 @@ function NumberFlow() {
             {content}
           </div>
         )}
-        {!hasContent && !isCenterBlock && (
+        {!hasContent && !(x === CENTER_X && y === CENTER_Y) && (
           <div className="w-2 h-2 bg-gray-600 rounded-full" />
         )}
       </div>
@@ -597,11 +880,12 @@ function NumberFlow() {
               ? "RESUME"
               : "START"}
           </button>
-          <div className="flex gap-12 items-center">
+
+          <div className="flex gap-12 items-center mt-6">
             <div className="text-center">
               <div className="text-sm text-gray-500 mb-2">LEFT</div>
               <div className="grid grid-cols-3 grid-rows-3 gap-1 w-[128px]">
-                <div className="col-start-2">
+                <div className="col-start-2 row-start-1">
                   <button
                     onClick={() =>
                       dispatch({
@@ -610,9 +894,37 @@ function NumberFlow() {
                       })
                     }
                     className="w-10 h-10 bg-gray-900 hover:bg-gray-800 rounded text-xs flex items-center justify-center border border-gray-700 text-white transition-all duration-200"
-                    disabled={!isPlaying || gameOver || gameWon}
+                    disabled={!isPlaying}
                   >
                     W
+                  </button>
+                </div>
+                <div className="col-start-1 row-start-2">
+                  <button
+                    onClick={() =>
+                      dispatch({
+                        type: "MOVE_PIECE",
+                        payload: { side: "left", direction: "left" },
+                      })
+                    }
+                    className="w-10 h-10 bg-gray-900 hover:bg-gray-800 rounded text-xs flex items-center justify-center border border-gray-700 text-white transition-all duration-200"
+                    disabled={!isPlaying}
+                  >
+                    A
+                  </button>
+                </div>
+                <div className="col-start-2 row-start-2">
+                  <button
+                    onClick={() =>
+                      dispatch({
+                        type: "MOVE_PIECE",
+                        payload: { side: "left", direction: "down" },
+                      })
+                    }
+                    className="w-10 h-10 bg-gray-900 hover:bg-gray-800 rounded text-xs flex items-center justify-center border border-gray-700 text-white transition-all duration-200"
+                    disabled={!isPlaying}
+                  >
+                    S
                   </button>
                 </div>
                 <div className="col-start-3 row-start-2">
@@ -624,55 +936,39 @@ function NumberFlow() {
                       })
                     }
                     className="w-10 h-10 bg-gray-900 hover:bg-gray-800 rounded text-xs flex items-center justify-center border border-gray-700 text-white transition-all duration-200"
-                    disabled={!isPlaying || gameOver || gameWon}
+                    disabled={!isPlaying}
                   >
                     D
                   </button>
                 </div>
-                <div className="col-start-2 row-start-3">
+                <div className="col-start-1 col-span-3 row-start-3 mt-1">
                   <button
                     onClick={() =>
                       dispatch({
-                        type: "MOVE_PIECE",
-                        payload: { side: "left", direction: "down" },
+                        type: "ROTATE_PIECE",
+                        payload: { side: "left" },
                       })
                     }
-                    className="w-10 h-10 bg-gray-900 hover:bg-gray-800 rounded text-xs flex items-center justify-center border border-gray-700 text-white transition-all duration-200"
-                    disabled={!isPlaying || gameOver || gameWon}
+                    className="w-full h-8 bg-gray-900 hover:bg-gray-800 rounded text-xs flex items-center justify-center border border-gray-700 text-white transition-all duration-200"
+                    disabled={!isPlaying}
                   >
-                    S
+                    E
                   </button>
                 </div>
               </div>
             </div>
             <div className="text-center">
-              <div className="text-sm text-gray-500 mb-2">SPEED</div>
-              <div className="flex gap-2 items-center">
-                <button
-                  onClick={() =>
-                    dispatch({ type: "SET_SPEED", level: speedLevel - 1 })
-                  }
-                  className="w-10 h-10 bg-gray-900 hover:bg-gray-800 rounded text-lg border border-gray-700 text-white transition-all duration-200"
-                >
-                  -
-                </button>
-                <div className="w-10 text-xl text-gray-400 font-mono">
+              <div className="text-sm text-gray-500 mb-2">LEVEL</div>
+              <div className="w-20 h-12 bg-gray-900 rounded border border-gray-700 flex items-center justify-center">
+                <div className="text-2xl text-white font-mono">
                   {speedLevel}
                 </div>
-                <button
-                  onClick={() =>
-                    dispatch({ type: "SET_SPEED", level: speedLevel + 1 })
-                  }
-                  className="w-10 h-10 bg-gray-900 hover:bg-gray-800 rounded text-lg border border-gray-700 text-white transition-all duration-200"
-                >
-                  +
-                </button>
               </div>
             </div>
             <div className="text-center">
               <div className="text-sm text-gray-500 mb-2">RIGHT</div>
               <div className="grid grid-cols-3 grid-rows-3 gap-1 w-[128px]">
-                <div className="col-start-2">
+                <div className="col-start-2 row-start-1">
                   <button
                     onClick={() =>
                       dispatch({
@@ -681,7 +977,7 @@ function NumberFlow() {
                       })
                     }
                     className="w-10 h-10 bg-gray-900 hover:bg-gray-800 rounded text-lg flex items-center justify-center border border-gray-700 text-white transition-all duration-200"
-                    disabled={!isPlaying || gameOver || gameWon}
+                    disabled={!isPlaying}
                   >
                     ↑
                   </button>
@@ -695,12 +991,12 @@ function NumberFlow() {
                       })
                     }
                     className="w-10 h-10 bg-gray-900 hover:bg-gray-800 rounded text-lg flex items-center justify-center border border-gray-700 text-white transition-all duration-200"
-                    disabled={!isPlaying || gameOver || gameWon}
+                    disabled={!isPlaying}
                   >
                     ←
                   </button>
                 </div>
-                <div className="col-start-2 row-start-3">
+                <div className="col-start-2 row-start-2">
                   <button
                     onClick={() =>
                       dispatch({
@@ -709,18 +1005,47 @@ function NumberFlow() {
                       })
                     }
                     className="w-10 h-10 bg-gray-900 hover:bg-gray-800 rounded text-lg flex items-center justify-center border border-gray-700 text-white transition-all duration-200"
-                    disabled={!isPlaying || gameOver || gameWon}
+                    disabled={!isPlaying}
                   >
                     ↓
+                  </button>
+                </div>
+                <div className="col-start-3 row-start-2">
+                  <button
+                    onClick={() =>
+                      dispatch({
+                        type: "MOVE_PIECE",
+                        payload: { side: "right", direction: "right" },
+                      })
+                    }
+                    className="w-10 h-10 bg-gray-900 hover:bg-gray-800 rounded text-lg flex items-center justify-center border border-gray-700 text-white transition-all duration-200"
+                    disabled={!isPlaying}
+                  >
+                    →
+                  </button>
+                </div>
+                <div className="col-start-1 col-span-3 row-start-3 mt-1">
+                  <button
+                    onClick={() =>
+                      dispatch({
+                        type: "ROTATE_PIECE",
+                        payload: { side: "right" },
+                      })
+                    }
+                    className="w-full h-8 bg-gray-900 hover:bg-gray-800 rounded text-xs flex items-center justify-center border border-gray-700 text-white transition-all duration-200"
+                    disabled={!isPlaying}
+                  >
+                    SPACE
                   </button>
                 </div>
               </div>
             </div>
           </div>
-          <div className="text-center mt-8">
+
+          <div className="text-center mt-4">
             <p className="text-gray-500 text-sm">
-              Move blocks with W/S/D (left) and ↑/←/↓ (right) • Create a 2048
-              block in the centre to win
+              Controls: (Left) WASD to move, E to rotate • (Right) Arrows to
+              move, Space to rotate
             </p>
           </div>
         </div>
